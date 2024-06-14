@@ -1,0 +1,41 @@
+site_name: nkland Documentation
+theme:
+  name: material
+markdown_extensions:
+- admonition
+- pymdownx.details
+- pymdownx.superfences
+- pymdownx.magiclink
+- pymdownx.arithmatex:
+    generic: true
+- pymdownx.superfences:
+    custom_fences:
+      - name: mermaid
+        class: mermaid
+        format: !!python/name:pymdownx.superfences.fence_code_format
+extra_javascript:
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+nav:
+  - Home: index.md
+  - NK Model: nkmodel.md
+  - API:
+    - api/nkland.md
+plugins:
+- mkdocstrings:
+    handlers:
+      python:
+        import:
+        - https://docs.python.org/3/objects.inv
+        - https://numpy.org/doc/stable/objects.inv
+        options:
+          docstring_style: numpy
+          show_source: false
+          # merge_init_into_class: true
+          # docstring_section_style: spacy
+          # members_order: source
+          # show_symbol_type_heading: true
+          # show_symbol_type_toc: true
+          separate_signature: true
+          show_signature_annotations: true
+          signature_crossrefs: true

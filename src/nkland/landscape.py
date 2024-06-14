@@ -13,6 +13,8 @@ class NKLand:
     def __init__(self, n: int, k: int, seed: int | None = None) -> None:
         r"""Create the NK landscape model.
 
+        Read more in the [NK model description](../nkmodel.md).
+
         Parameters
         ----------
         n : int
@@ -73,6 +75,8 @@ class NKLand:
 
     def evaluate(self, solutions: npt.NDArray[np.uint8]) -> npt.NDArray[np.float64]:
         r"""Evaluate the fitness values of multiple solutions.
+
+        Read more about the [fitness formula](../nkmodel.md#fitness).
 
         Parameters
         ----------
