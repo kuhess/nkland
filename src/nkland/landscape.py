@@ -6,6 +6,8 @@ import numpy.typing as npt
 MAX_N = 1024
 MAX_K = 63
 
+NDIM_EVALUATE = 2
+
 
 class NKLand:
     def __init__(self, n: int, k: int, seed: int | None = None) -> None:
@@ -69,47 +71,47 @@ class NKLand:
         num_interactions = 2 ** (self.k + 1)
         return self._rng.uniform(size=(self.n, num_interactions))
 
-    def evaluate(self, solution: npt.ArrayLike) -> np.float64:
-        r"""Evaluate the fitness of a solution.
+    def evaluate(self, solutions: npt.NDArray[np.uint8]) -> npt.NDArray[np.float64]:
+        r"""Evaluate the fitness values of multiple solutions.
 
         Parameters
         ----------
-        solution : npt.ArrayLike
-            Binary vector of the solution.
+        solutions : npt.NDArray[np.uint8]
+            Matrix of solutions $S_{N \times m}$ with $m$ as the number of solutions.
+            Each row $s_i$ contains $N$ binary values (0 or 1).
 
         Returns
         -------
-        np.float64
-            The fitness value of the solution.
+        npt.NDArray[np.float64]
+            The fitness values corresponding to the solutions.
 
         """
-        s = np.asarray(solution)
-        if s.shape != (self.n,):
+        if not (solutions.ndim == NDIM_EVALUATE and solutions.shape[1] == self.n):
             msg = (
-                "bad shape for argument `solution`, "
-                f"expected shape={(self.n,)} but got shape={s.shape}"
+                "bad shape for argument `solutions`, "
+                f"expected shape==(m,{self.n}) but got shape=={solutions.shape}"
             )
             raise ValueError(msg)
-        if not np.all((s == 0) | (s == 1)):
-            msg = "solution contains non-binary values: solution={s}"
+        if not np.all((solutions == 0) | (solutions == 1)):
+            msg = "solutions contains non-binary values: solutions={solutions}"
             raise ValueError(msg)
 
-        contributions_bits_indices = s[self.interaction_indices_matrix]
-        contributions_indices = np.dot(contributions_bits_indices, self._powers2)
+        contributions_bits = solutions[..., self.interaction_indices_matrix]
+        contributions_indices = np.dot(contributions_bits, self._powers2)
 
-        fitness: np.float64 = np.mean(
-            self.fitness_contributions[np.arange(self.n), contributions_indices]
+        fitness: npt.NDArray[np.float64] = np.mean(
+            self.fitness_contributions[np.arange(self.n), contributions_indices],
+            axis=-1,
         )
-
         return fitness
 
-    def sample(self) -> npt.NDArray[np.uint8]:
-        r"""Get a random solution of $N$ dimensions.
+    def sample(self, m: int = 1) -> npt.NDArray[np.uint8]:
+        r"""Get $m$ random solutions of $N$ dimensions.
 
         Returns
         -------
         npt.NDArray[np.uint8]
-            Vector $s$ of $N$ binary values.
+            Matrix $S_{m \times N}$ of binary values.
 
         """
-        return self._rng.integers(0, 2, size=(self.n,), dtype=np.uint8)
+        return self._rng.integers(0, 2, size=(m, self.n), dtype=np.uint8)
