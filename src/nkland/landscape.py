@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
+import numpy.random as npr
 import numpy.typing as npt
 
 MAX_N = 1024
@@ -10,7 +14,15 @@ NDIM_EVALUATE = 2
 
 
 class NKLand:
-    def __init__(self, n: int, k: int, seed: int | None = None) -> None:
+    def __init__(
+        self,
+        n: int,
+        k: int,
+        *,
+        rng: int | npr.Generator | None = None,
+        interaction_indices_matrix: npt.NDArray[np.int32] | None = None,
+        fitness_contributions: npt.NDArray[np.float64] | None = None,
+    ) -> None:
         r"""Create the NK landscape model.
 
         Parameters
@@ -19,10 +31,14 @@ class NKLand:
             Number of components, $N$.
         k : int
             Number of interactions per component, $K$.
-        seed : (None | int)
-            Seed for random number generation.
+        rng : int | npr.Generator | None
+            Seed or generator for random number generation.
             See [NumPy doc](https://numpy.org/doc/1.26/reference/random/generator.html#numpy.random.default_rng)
             for more information.
+        interaction_indices_matrix : npt.NDArray[np.int32] | None
+            The interaction matrix $M_{N \times K+1}$
+        fitness_contributions : npt.NDArray[np.float64] | None
+            The fitness contribution matrix $C_{N \times 2^{K+1}}$
 
         """
         if n > MAX_N:
@@ -37,13 +53,17 @@ class NKLand:
 
         self.n = n
         self.k = k
-        self.seed = seed
 
         self._powers2 = 1 << np.arange(self.k, -1, -1)
-        self._rng = np.random.default_rng(seed)
+        self._rng = npr.default_rng(rng)
 
-        self.interaction_indices_matrix = self._generate_interaction_indices_matrix()
-        self.fitness_contributions = self._generate_fitness_contributions()
+        if interaction_indices_matrix is None:
+            interaction_indices_matrix = self._generate_interaction_indices_matrix()
+        self.interaction_indices_matrix = interaction_indices_matrix
+
+        if fitness_contributions is None:
+            fitness_contributions = self._generate_fitness_contributions()
+        self.fitness_contributions = fitness_contributions
 
     def _generate_interaction_indices_matrix(self) -> npt.NDArray[np.int32]:
         interaction_indices_matrix = np.empty((self.n, self.k + 1), dtype=np.int32)
@@ -115,3 +135,51 @@ class NKLand:
 
         """
         return self._rng.integers(0, 2, size=(m, self.n), dtype=np.uint8)
+
+    def save(self, file: str | Path) -> None:
+        """Save the NKLand instance to a file in NumPy `.npz` format.
+
+        Parameters
+        ----------
+        file : str | Path
+            The path where the instance will be saved. The `.npz` extension will be
+            appended to the filename if it is not already there.
+
+        """
+        np.savez(
+            file,
+            allow_pickle=False,
+            n=self.n,
+            k=self.k,
+            interaction_indices_matrix=self.interaction_indices_matrix,
+            fitness_contributions=self.fitness_contributions,
+            bitgenerator_state=json.dumps(self._rng.bit_generator.state),
+        )
+
+    @staticmethod
+    def load(file: str | Path) -> NKLand:
+        """Create an NKLand instance from a file written with the save method.
+
+        Parameters
+        ----------
+        file : str | Path
+            The path of the file to load.
+
+        Returns
+        -------
+        NKLand
+            The instance loaded.
+
+        """
+        data = np.load(file, allow_pickle=False)
+
+        rng = npr.default_rng()
+        rng.bit_generator.state = json.loads(data["bitgenerator_state"].item())
+
+        return NKLand(
+            n=data["n"].item(),
+            k=data["k"].item(),
+            rng=rng,
+            interaction_indices_matrix=data["interaction_indices_matrix"],
+            fitness_contributions=data["fitness_contributions"],
+        )
