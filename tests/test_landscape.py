@@ -39,8 +39,8 @@ def test_save_then_load(tmp_path: Path):
         landscape.fitness_contributions,
     )
     np.testing.assert_array_equal(
-        loaded_landscape.interaction_indices_matrix,
-        landscape.interaction_indices_matrix,
+        loaded_landscape.interaction_indices,
+        landscape.interaction_indices,
     )
     np.testing.assert_array_equal(
         loaded_landscape._rng.integers(low=0, high=10, size=10),
