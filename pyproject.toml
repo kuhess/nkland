@@ -36,19 +36,20 @@ ignore_errors = true
 [tool.ruff]
 lint.select = ["ALL"]
 lint.ignore = [
-    "D100",   # issing docstring in public module
-    "D101",   # issing docstring in public class
-    "D104",   # missing docstring in public package
-    "D203",   # ignore in favor of D211
-    "D213",   # ignore in favor of D212
-    "ANN101", # missing type annotation for `self` in method
-    "TD002",  # missing author name in TODO
-    "TD003",  # missing link in TODO
-    "FIX002", # line contains TODO
-    "ISC001", # single line implicit string concatenation
-    "COM812", # missing trailing comma
-    "TRY003", # long message forbidden in exceptions
-    "TCH003", # typing only standard library import
+    "D100",    # missing docstring in public module
+    "D101",    # missing docstring in public class
+    "D104",    # missing docstring in public package
+    "D203",    # ignore in favor of D211
+    "D213",    # ignore in favor of D212
+    "ANN101",  # missing type annotation for `self` in method
+    "TD002",   # missing author name in TODO
+    "TD003",   # missing link in TODO
+    "FIX002",  # line contains TODO
+    "ISC001",  # single line implicit string concatenation
+    "COM812",  # missing trailing comma
+    "TRY003",  # long message forbidden in exceptions
+    "TCH003",  # typing only standard library import
+    "PLR2004", # Magic value used in comparison, ...
 ]
 
 [tool.ruff.lint.per-file-ignores]
