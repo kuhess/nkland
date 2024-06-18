@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import torch
 from nkland import NKLand
 
 
@@ -10,7 +11,7 @@ def test_roundtrip():
     fitness = landscape.evaluate(solutions)
     np.testing.assert_array_almost_equal(
         fitness,
-        [0.308569],
+        [0.557391],
     )
 
 
@@ -20,13 +21,13 @@ def test_roundtrip_with_m_samples():
     fitness = landscape.evaluate(solutions)
     np.testing.assert_array_almost_equal(
         fitness,
-        [0.308569, 0.509432, 0.551306],
+        [0.557391, 0.4951, 0.57628],
     )
 
 
 def test_save_then_load(tmp_path: Path):
     landscape = NKLand.random(32, 1, seed=123)
-    filepath = tmp_path / "landscape_32_1.npz"
+    filepath = tmp_path / "landscape_32_1"
 
     landscape.save(filepath)
 
@@ -39,25 +40,25 @@ def test_save_then_load(tmp_path: Path):
         landscape.fitness_contributions,
     )
     np.testing.assert_array_equal(
-        loaded_landscape.interaction_indices,
-        landscape.interaction_indices,
+        loaded_landscape.interactions,
+        landscape.interactions,
     )
     np.testing.assert_array_equal(
-        loaded_landscape._rng.integers(low=0, high=10, size=10),
-        landscape._rng.integers(low=0, high=10, size=10),
+        torch.rand(3, generator=loaded_landscape._rng),
+        torch.rand(3, generator=landscape._rng),
     )
 
 
 def test_create_landscape_from_interactions():
-    interaction_indices = np.asarray(
+    interactions = torch.tensor(
         [
-            [0, 1],
-            [1, 3],
-            [1, 2],
-            [0, 3],
+            [1, 1, 0, 0],
+            [0, 1, 0, 1],
+            [0, 1, 1, 0],
+            [1, 0, 0, 1],
         ]
     )
-    contributions = np.asarray(
+    contributions = torch.tensor(
         [
             # col0 col1 col2 col3
             [0.1, 0.6, 0.3, 0.3],  # row0
@@ -67,7 +68,7 @@ def test_create_landscape_from_interactions():
         ]
     )
     landscape = NKLand(
-        interaction_indices=interaction_indices,
+        interactions=interactions,
         fitness_contributions=contributions,
     )
 
@@ -75,7 +76,7 @@ def test_create_landscape_from_interactions():
     assert landscape._k == 1
 
     np.testing.assert_almost_equal(
-        landscape.evaluate(np.asarray([[0, 1, 0, 0]])),
+        landscape.evaluate(torch.tensor([[0, 1, 0, 0]])),
         (
             0.6  # row0, (0, 1) = col1
             + 0.1  # row1, (1, 0) = col2
