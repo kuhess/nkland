@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Union
 
 import numpy as np
 import numpy.random as npr
@@ -10,7 +11,7 @@ import numpy.typing as npt
 MAX_N = 1024
 MAX_K = 63
 
-type _Rng = int | npr.SeedSequence | npr.BitGenerator | npr.Generator
+_Rng = Union[int, npr.SeedSequence, npr.BitGenerator, npr.Generator]
 
 
 class NKLand:
@@ -18,7 +19,7 @@ class NKLand:
         self,
         interaction_indices: npt.NDArray[np.int32],
         fitness_contributions: npt.NDArray[np.float64],
-        seed: _Rng | None = None,
+        seed: Union[_Rng, None] = None,
     ) -> None:
         r"""Create the NK landscape model.
 
@@ -29,7 +30,7 @@ class NKLand:
         fitness_contributions : npt.NDArray[np.float64]
             The matrix $C_{N \times 2^{K+1}}$ containing the contributions to the
             fitness.
-        seed : _Rng | None
+        seed : Union[_Rng, None]
             Seed or generator for random number generation.
             See [NumPy doc](https://numpy.org/doc/1.26/reference/random/generator.html#numpy.random.default_rng)
             for more information.
@@ -122,12 +123,12 @@ class NKLand:
         """
         return self._rng.integers(0, 2, size=(m, self._n), dtype=np.uint8)
 
-    def save(self, file: str | Path) -> None:
+    def save(self, file: Union[str, Path]) -> None:
         """Save the NKLand instance to a file in NumPy `.npz` format.
 
         Parameters
         ----------
-        file : str | Path
+        file : Union[str, Path]
             The path where the instance will be saved. The `.npz` extension will be
             appended to the filename if it is not already there.
 
@@ -143,12 +144,12 @@ class NKLand:
         )
 
     @staticmethod
-    def load(file: str | Path) -> NKLand:
+    def load(file: Union[str, Path]) -> NKLand:
         """Load a NKLand instance from a file written with the save method.
 
         Parameters
         ----------
-        file : str | Path
+        file : Union[str, Path]
             The path of the file to load.
 
         Returns
@@ -169,7 +170,7 @@ class NKLand:
         )
 
     @staticmethod
-    def random(n: int, k: int, seed: _Rng | None = None) -> NKLand:
+    def random(n: int, k: int, seed: Union[_Rng, None] = None) -> NKLand:
         """Create a random NK landscape.
 
         Parameters
@@ -178,7 +179,7 @@ class NKLand:
             Number of components, $N$.
         k : int
             Number of interactions per component, $K$.
-        seed : _Rng | None
+        seed : Union[_Rng, None]
             Seed or generator for random number generation.
 
         Result
@@ -209,7 +210,7 @@ class NKLand:
 
     @staticmethod
     def _generate_interaction_indices(
-        n: int, k: int, rng: npr.Generator | None = None
+        n: int, k: int, rng: Union[npr.Generator, None] = None
     ) -> npt.NDArray[np.int32]:
         interaction_indices = np.empty((n, k + 1), dtype=np.int32)
         for i in np.arange(n, dtype=np.int32):
@@ -234,7 +235,7 @@ class NKLand:
 
     @staticmethod
     def _generate_fitness_contributions(
-        n: int, k: int, rng: npr.Generator | None = None
+        n: int, k: int, rng: Union[npr.Generator, None] = None
     ) -> npt.NDArray[np.float64]:
         num_interactions = 2 ** (k + 1)
         return rng.uniform(size=(n, num_interactions))
