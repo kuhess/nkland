@@ -7,7 +7,6 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.9"
-numpy = "^1.26.4"
 torch = "~2.2"
 
 [tool.poetry.group.dev.dependencies]
@@ -15,14 +14,12 @@ pytest = "^8.2.2"
 ruff = "^0.4.8"
 mypy = "^1.10.0"
 pre-commit = "^3.7.1"
-pytest-benchmark = "^4.0.0"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.mypy]
-plugins = "numpy.typing.mypy_plugin"
 disallow_untyped_defs = true
 disallow_any_unimported = true
 no_implicit_optional = true
