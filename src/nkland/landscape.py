@@ -210,7 +210,7 @@ class NKLand:
 
     @staticmethod
     def _generate_interaction_indices(
-        n: int, k: int, rng: Union[npr.Generator, None] = None
+        n: int, k: int, rng: npr.Generator
     ) -> npt.NDArray[np.int32]:
         interaction_indices = np.empty((n, k + 1), dtype=np.int32)
         for i in np.arange(n, dtype=np.int32):
@@ -235,7 +235,7 @@ class NKLand:
 
     @staticmethod
     def _generate_fitness_contributions(
-        n: int, k: int, rng: Union[npr.Generator, None] = None
+        n: int, k: int, rng: npr.Generator
     ) -> npt.NDArray[np.float64]:
         num_interactions = 2 ** (k + 1)
         return rng.uniform(size=(n, num_interactions))
