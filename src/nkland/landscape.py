@@ -1,176 +1,277 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Union
 
-import numpy as np
-import numpy.random as npr
-import numpy.typing as npt
+import torch
 
 MAX_N = 1024
-MAX_K = 63
+MAX_K = 32
 
-_Rng = Union[int, npr.SeedSequence, npr.BitGenerator, npr.Generator]
+_Rng = Union[int, torch.Generator]
+
+
+def _is_power_of_2(n: int) -> bool:
+    return (n & (n - 1) == 0) and n != 0
+
+
+def default_rng(seed: Union[_Rng, None] = None) -> torch.Generator:
+    """Create a default random number generator.
+
+    Parameters
+    ----------
+    seed : Union[_Rng, None], optional
+        Seed or generator for random number generation, by default None.
+
+    Returns
+    -------
+    torch.Generator
+        A random number generator.
+
+    """
+    if isinstance(seed, torch.Generator):
+        return seed
+    rng = torch.Generator()
+    if seed is not None:
+        rng.manual_seed(seed)
+    return rng
 
 
 class NKLand:
     def __init__(
         self,
-        interaction_indices: npt.NDArray[np.int32],
-        fitness_contributions: npt.NDArray[np.float64],
+        interactions: torch.Tensor,
+        fitness_contributions: torch.Tensor,
+        *,
         seed: Union[_Rng, None] = None,
+        use_gpu: bool = False,
     ) -> None:
         r"""Create the NK landscape model.
 
         Parameters
         ----------
-        interaction_indices : npt.NDArray[np.int32]
-            The matrix $M_{N \times K+1}$ containing the indices of the interactions.
-        fitness_contributions : npt.NDArray[np.float64]
+        interactions : torch.Tensor
+            The adjacency matrix $A_{N \times N}$ containing binary values (0 or 1).
+
+            It can be a batch of adjacencies matrix with shape
+            $(\text{num_instances}, N, N)$.
+        fitness_contributions : torch.Tensor
             The matrix $C_{N \times 2^{K+1}}$ containing the contributions to the
             fitness.
-        seed : Union[_Rng, None]
-            Seed or generator for random number generation.
-            See [NumPy doc](https://numpy.org/doc/1.26/reference/random/generator.html#numpy.random.default_rng)
-            for more information.
+
+            It can be a batch of adjacencies matrix with shape
+            $(\text{num_instances}, N, 2^{k+1})$.
+        seed : Union[_Rng, None], optional
+            Seed or generator for random number generation. Default is None.
+        use_gpu : bool, optional
+            Whether to use GPU acceleration. Default is False.
 
         """
-        if interaction_indices.ndim != 2:
+        if interactions.dim() not in [2, 3]:
             msg = (
-                "interaction indices matrix must be have 2 dimensions, but got: "
-                f"ndim={interaction_indices.ndim}"
+                "interactions tensor must have 2 or 3 dimensions, "
+                f"but got: {interactions.dim()}"
             )
             raise ValueError(msg)
-        if interaction_indices.shape[0] <= interaction_indices.shape[1]:
+        if fitness_contributions.dim() not in [2, 3]:
             msg = (
-                "interaction indices matrix has bad shape, the shape (n, k+1) must"
-                "have the following property n > k, but got: "
-                f"n={interaction_indices.shape[0]} k={interaction_indices.shape[1]}"
+                "fitness contributions tensor must have 2 or 3 dimensions, "
+                f"but got: {fitness_contributions.dim()}"
             )
             raise ValueError(msg)
-        if fitness_contributions.ndim != 2:
-            msg = (
-                "fitness contributions matrix must have 2 dimensions, but got: "
-                f"ndim={fitness_contributions.ndim}"
-            )
-            raise ValueError(msg)
-
-        if not (
-            interaction_indices.shape[0] == fitness_contributions.shape[0]
-            and interaction_indices.shape[1] == np.log2(fitness_contributions.shape[1])
+        if (
+            interactions.dim() == 3
+            and fitness_contributions.dim() == 3
+            and interactions.size(0) != fitness_contributions.size(0)
         ):
-            shape_a = interaction_indices.shape
-            shape_b = fitness_contributions.shape
             msg = (
-                "interaction indices and fitness contributions shapes do not match "
-                "requirements: shapes must be (n, k+1) and (n, 2**(k+1)), but got "
-                f"({shape_a[0]}, {shape_a[1]-1}-1) and "
-                f"({shape_b[0]}, 2**{np.log2(shape_b[1])})"
+                "with batches, first dimension (number of instances) of `interactions` "
+                "and `fitness_contributions` must have same cardinality, but got: "
+                f"{interactions.size(0)} != {fitness_contributions.size(0)}"
+            )
+            raise ValueError(msg)
+        if interactions.size(-1) != interactions.size(-2):
+            msg = (
+                "`interactions` has bad shape, last 2 dimensions must be equal, "
+                f"but got: {interactions.shape}"
+            )
+            raise ValueError(msg)
+        if interactions.size(-2) != fitness_contributions.size(-2):
+            msg = (
+                "penultimate dimension of `interactions` and `fitness_contribution` do "
+                "not match: "
+                f"{interactions.size(-2)} != {fitness_contributions.size(-2)}"
+            )
+            raise ValueError(msg)
+        if not _is_power_of_2(fitness_contributions.size(-1)):
+            msg = (
+                "`fitness_contributions` last dimension must be a power of 2, "
+                f"but got: {fitness_contributions.size(1)}"
             )
             raise ValueError(msg)
 
-        self.interaction_indices = interaction_indices
-        self.fitness_contributions = fitness_contributions
-        self._rng = npr.default_rng(seed)
+        self.device = torch.device(
+            "cuda" if use_gpu and torch.cuda.is_available() else "cpu"
+        )
 
-        self._n = interaction_indices.shape[0]
-        self._k = interaction_indices.shape[1] - 1
-        self._powers2 = 1 << np.arange(self._k, -1, -1)
+        self._rng = default_rng(seed)
 
-    def evaluate(self, solutions: npt.NDArray[np.uint8]) -> npt.NDArray[np.float64]:
-        r"""Evaluate the fitness values of multiple solutions.
+        if interactions.dim() == 2:
+            interactions = interactions.unsqueeze(0)
+        self.interactions = interactions.to(dtype=torch.uint8, device=self.device)
 
-        Parameters
-        ----------
-        solutions : npt.NDArray[np.uint8]
-            Matrix of solutions $S_{N \times m}$ with $m$ as the number of solutions.
-            Each row $s_i$ contains $N$ binary values (0 or 1).
+        if fitness_contributions.dim() == 2:
+            fitness_contributions = fitness_contributions.unsqueeze(0)
+        self.fitness_contributions = fitness_contributions.to(
+            dtype=torch.float64, device=self.device
+        )
+
+        self._n = self.interactions.size(-1)
+        self._k = int(torch.sum(self.interactions[0, 0]).sum().item()) - 1
+        self._num_instances = self.interactions.size(0)
+
+        self._powers_of_2 = 2 ** torch.arange(
+            self._k, -1, -1, dtype=torch.float32, device=self.device
+        )
+
+    def is_batch(self) -> bool:
+        """Check if the NK landscape is a batch.
 
         Returns
         -------
-        npt.NDArray[np.float64]
-            The fitness values corresponding to the solutions.
+        bool
+            True if there are multiple instances in the batch, False otherwise.
 
         """
-        if not (solutions.ndim == 2 and solutions.shape[1] == self._n):
-            msg = (
-                "bad shape for argument `solutions`, "
-                f"expected shape==(m,{self._n}) but got shape=={solutions.shape}"
-            )
-            raise ValueError(msg)
-        if not np.all((solutions == 0) | (solutions == 1)):
-            msg = "solutions contains non-binary values: solutions={solutions}"
-            raise ValueError(msg)
+        return self._num_instances > 0
 
-        contributions_bits = solutions[..., self.interaction_indices]
-        contributions_indices = np.dot(contributions_bits, self._powers2)
+    def evaluate(self, solutions: torch.Tensor) -> Union[torch.Tensor, float]:
+        r"""Evaluate the fitness of one or more solutions.
 
-        fitness: npt.NDArray[np.float64] = np.mean(
-            self.fitness_contributions[np.arange(self._n), contributions_indices],
-            axis=-1,
+        Parameters
+        ----------
+        solutions : torch.Tensor
+            Matrix of solutions $S_{m \times N}$ with $m$ as the number of solutions.
+            Each row $s_i$ contains $N$ binary values (0 or 1).
+
+            It can be a batch of solution matrices with shape
+            $(\text{num_instances}, m, N)$.
+
+        Returns
+        -------
+        Union[torch.Tensor, float]
+            The fitness values corresponding to the solutions.
+
+            Note that the returned Tensor is squeezed.
+
+        """
+        if solutions.dim() == 1:
+            solutions = solutions.unsqueeze(0)
+        if solutions.dim() == 2:
+            solutions = solutions.unsqueeze(0)
+
+        m = solutions.size(1)
+
+        solutions = solutions.to(dtype=torch.float32, device=self.device)
+        solutions_expanded = solutions.unsqueeze(3).expand(-1, -1, -1, self._n)
+
+        indices = self.interactions.nonzero(as_tuple=True)[-1].reshape(
+            -1, self._n, self._k + 1
         )
-        return fitness
+        indices_expanded = indices.unsqueeze(1).expand(-1, m, -1, -1)
+        contrib_ind = torch.matmul(
+            torch.gather(solutions_expanded, 2, indices_expanded),
+            self._powers_of_2,
+        )
 
-    def sample(self, m: int = 1) -> npt.NDArray[np.uint8]:
+        contrib_expanded = self.fitness_contributions.unsqueeze(1).expand(-1, m, -1, -1)
+        contrib_ind_expanded = contrib_ind.unsqueeze(3).expand(-1, -1, -1, 1)
+
+        fitness = torch.mean(
+            torch.gather(contrib_expanded, -1, contrib_ind_expanded.long()),
+            dim=-2,
+        )
+
+        return fitness.squeeze()
+
+    def sample(self, m: int = 1) -> torch.Tensor:
         r"""Get $m$ random solutions of $N$ dimensions.
 
         Returns
         -------
-        npt.NDArray[np.uint8]
-            Matrix $S_{m \times N}$ of binary values.
+        torch.Tensor
+            Matrix $S_{m \times N}$ of binary values (0 or 1).
+
+            If the NKLand instance is a batch, returns multiple sample matrices with
+            shape $(\text{num_instances}, N, N)$.
 
         """
-        return self._rng.integers(0, 2, size=(m, self._n), dtype=np.uint8)
+        samples = torch.randint(
+            0,
+            2,
+            (self._num_instances, m, self._n),
+            generator=self._rng,
+            dtype=torch.uint8,
+            device=self.device,
+        )
+        return samples.squeeze(0)
 
     def save(self, file: Union[str, Path]) -> None:
-        """Save the NKLand instance to a file in NumPy `.npz` format.
+        """Save the NKLand instance to a file in a format compatible with PyTorch.
 
         Parameters
         ----------
         file : Union[str, Path]
-            The path where the instance will be saved. The `.npz` extension will be
-            appended to the filename if it is not already there.
+            The path where the instance will be saved.
 
         """
-        np.savez(
+        torch.save(
+            {
+                "interactions": self.interactions.cpu(),
+                "fitness_contributions": self.fitness_contributions.cpu(),
+                "generator_state": self._rng.get_state(),
+            },
             file,
-            allow_pickle=False,
-            n=self._n,
-            k=self._k,
-            interaction_indices=self.interaction_indices,
-            fitness_contributions=self.fitness_contributions,
-            bitgenerator_state=json.dumps(self._rng.bit_generator.state),
         )
 
     @staticmethod
-    def load(file: Union[str, Path]) -> NKLand:
+    def load(file: Union[str, Path], *, use_gpu: bool = False) -> NKLand:
         """Load a NKLand instance from a file written with the save method.
 
         Parameters
         ----------
         file : Union[str, Path]
             The path of the file to load.
+        use_gpu : bool, optional
+            Whether to use GPU acceleration. Default False.
 
         Returns
         -------
         NKLand
-            The NKLand instance loaded.
+            The loaded NKLand instance.
 
         """
-        data = np.load(file, allow_pickle=False)
+        data = torch.load(file)
 
-        rng = npr.default_rng()
-        rng.bit_generator.state = json.loads(data["bitgenerator_state"].item())
+        rng = torch.Generator()
+        rng.set_state(data["generator_state"])
 
         return NKLand(
-            interaction_indices=data["interaction_indices"],
+            interactions=data["interactions"],
             fitness_contributions=data["fitness_contributions"],
             seed=rng,
+            use_gpu=use_gpu,
         )
 
     @staticmethod
-    def random(n: int, k: int, seed: Union[_Rng, None] = None) -> NKLand:
+    def random(
+        n: int,
+        k: int,
+        *,
+        num_instances: int = 1,
+        seed: Union[_Rng, None] = None,
+        use_gpu: bool = False,
+    ) -> NKLand:
         """Create a random NK landscape.
 
         Parameters
@@ -179,13 +280,23 @@ class NKLand:
             Number of components, $N$.
         k : int
             Number of interactions per component, $K$.
-        seed : Union[_Rng, None]
+        num_instances : int, optional
+            Number of instances to generate for batch processing. Default is 1.
+        seed : Union[_Rng, None], optional
             Seed or generator for random number generation.
+        use_gpu : bool, optional
+            Whether to use GPU acceleration. Default is False.
 
         Result
         ------
         NKLand
             A random NK landscape.
+
+        Raises
+        ------
+        ValueError
+            If `n` is greater than MAX_N, `k` is greater than MAX_K, or `k` is greater
+            than `n - 1`.
 
         """
         if n > MAX_N:
@@ -198,44 +309,54 @@ class NKLand:
             msg = f"k cannot be greater than n-1={n-1}: k={k}"
             raise ValueError(msg)
 
-        rng = npr.default_rng(seed)
-        interaction_indices = NKLand._generate_interaction_indices(n, k, rng)
-        fitness_contributions = NKLand._generate_fitness_contributions(n, k, rng)
+        device = torch.device(
+            "cuda" if use_gpu and torch.cuda.is_available() else "cpu"
+        )
+        rng = default_rng(seed)
+
+        interactions = NKLand._generate_interactions(n, k, num_instances, rng, device)
+        fitness_contributions = NKLand._generate_fitness_contributions(
+            n, k, num_instances, rng, device
+        )
 
         return NKLand(
-            interaction_indices=interaction_indices,
+            interactions=interactions,
             fitness_contributions=fitness_contributions,
             seed=rng,
+            use_gpu=use_gpu,
         )
 
     @staticmethod
-    def _generate_interaction_indices(
-        n: int, k: int, rng: npr.Generator
-    ) -> npt.NDArray[np.int32]:
-        interaction_indices = np.empty((n, k + 1), dtype=np.int32)
-        for i in np.arange(n, dtype=np.int32):
-            # remove itself
-            possible_interaction_indices = np.delete(np.arange(n), i)
-            # note that choice method uses uniform distribution by default
-            picked_indices = rng.choice(
-                possible_interaction_indices,
-                size=k,
-                replace=False,
-            )
-            # add self interaction + sort
-            interaction_indices[i] = np.sort(
-                np.concatenate(
+    def _generate_interactions(
+        n: int, k: int, num_instances: int, rng: torch.Generator, device: torch.device
+    ) -> torch.Tensor:
+        interactions = torch.empty((num_instances, n, n))
+        for b in range(num_instances):
+            interactions[b] = torch.eye(n, dtype=torch.int32, device=device)
+
+            for i in range(n):
+                possible_neighbors = torch.cat(
                     (
-                        picked_indices,
-                        np.asarray([i]),
-                    ),
-                ),
-            )
-        return interaction_indices
+                        torch.arange(0, i),
+                        torch.arange(i + 1, n),
+                    )
+                )
+                selected_neighbors = possible_neighbors[
+                    torch.randperm(n - 1, generator=rng)[:k]
+                ]
+                interactions[b, i, selected_neighbors] = 1
+
+        return interactions.squeeze(0)
 
     @staticmethod
     def _generate_fitness_contributions(
-        n: int, k: int, rng: npr.Generator
-    ) -> npt.NDArray[np.float64]:
+        n: int, k: int, num_instances: int, rng: torch.Generator, device: torch.device
+    ) -> torch.Tensor:
         num_interactions = 2 ** (k + 1)
-        return rng.uniform(size=(n, num_interactions))
+        fitness_contributions = torch.rand(
+            (num_instances, n, num_interactions),
+            generator=rng,
+            dtype=torch.float64,
+        ).to(device)
+
+        return fitness_contributions.squeeze(0)
