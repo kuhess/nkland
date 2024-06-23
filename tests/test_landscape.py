@@ -47,7 +47,7 @@ def test_roundtrip_with_m_samples_b_batches():
 
 def test_save_then_load(tmp_path: Path):
     landscape = NKLand.random(32, 1, seed=123)
-    filepath = tmp_path / "landscape_32_1"
+    filepath = tmp_path / "landscape_32_1.pt"
 
     landscape.save(filepath)
 
