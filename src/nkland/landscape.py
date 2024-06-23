@@ -127,7 +127,7 @@ class NKLand:
         )
 
         self._n = self.interactions.size(-1)
-        self._k = torch.sum(self.interactions[0, 0]).item() - 1
+        self._k = int(torch.sum(self.interactions[0, 0]).sum().item()) - 1
         self._num_instances = self.interactions.size(0)
 
         self._powers_of_2 = 2 ** torch.arange(
@@ -312,9 +312,7 @@ class NKLand:
         device = torch.device(
             "cuda" if use_gpu and torch.cuda.is_available() else "cpu"
         )
-        rng = torch.Generator()
-        if seed is not None:
-            rng.manual_seed(seed)
+        rng = default_rng(seed)
 
         interactions = NKLand._generate_interactions(n, k, num_instances, rng, device)
         fitness_contributions = NKLand._generate_fitness_contributions(
