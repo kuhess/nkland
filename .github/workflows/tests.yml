@@ -71,5 +71,8 @@ jobs:
       - name: Run tests
         run: poetry run python -m pytest -p no:sugar -q tests/
 
+      - name: Run Ruff
+        run: poetry run ruff check --output-format=github .
+
       - name: Run mypy
         run: poetry run mypy .
