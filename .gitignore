@@ -3,3 +3,5 @@ __pycache__/
 .*_cache/
 poetry.lock
 .python-version
+.vscode/
+
