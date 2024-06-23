@@ -8,19 +8,19 @@ import torch
 MAX_N = 1024
 MAX_K = 32
 
-_Rng = int | torch.Generator
+_Rng = Union[int, torch.Generator]
 
 
 def _is_power_of_2(n: int) -> bool:
     return (n & (n - 1) == 0) and n != 0
 
 
-def default_rng(seed: _Rng | None = None) -> torch.Generator:
+def default_rng(seed: Union[_Rng, None] = None) -> torch.Generator:
     """Create a default random number generator.
 
     Parameters
     ----------
-    seed : _Rng | None, optional
+    seed : Union[_Rng, None], optional
         Seed or generator for random number generation, by default None.
 
     Returns
@@ -43,7 +43,7 @@ class NKLand:
         interactions: torch.Tensor,
         fitness_contributions: torch.Tensor,
         *,
-        seed: _Rng | None = None,
+        seed: Union[_Rng, None] = None,
         use_gpu: bool = False,
     ) -> None:
         r"""Create the NK landscape model.
@@ -61,7 +61,7 @@ class NKLand:
 
             It can be a batch of adjacencies matrix with shape
             $(\text{num_instances}, N, 2^{k+1})$.
-        seed : _Rng | None, optional
+        seed : Union[_Rng, None], optional
             Seed or generator for random number generation. Default is None.
         use_gpu : bool, optional
             Whether to use GPU acceleration. Default is False.
@@ -145,7 +145,7 @@ class NKLand:
         """
         return self._num_instances > 0
 
-    def evaluate(self, solutions: torch.Tensor) -> torch.Tensor | float:
+    def evaluate(self, solutions: torch.Tensor) -> Union[torch.Tensor, float]:
         r"""Evaluate the fitness of one or more solutions.
 
         Parameters
@@ -159,7 +159,7 @@ class NKLand:
 
         Returns
         -------
-        torch.Tensor | float
+        Union[torch.Tensor, float]
             The fitness values corresponding to the solutions.
 
             Note that the returned Tensor is squeezed.
@@ -216,12 +216,12 @@ class NKLand:
         )
         return samples.squeeze(0)
 
-    def save(self, file: str | Path) -> None:
+    def save(self, file: Union[str, Path]) -> None:
         """Save the NKLand instance to a file in a format compatible with PyTorch.
 
         Parameters
         ----------
-        file : str | Path
+        file : Union[str, Path]
             The path where the instance will be saved.
 
         """
@@ -235,7 +235,7 @@ class NKLand:
         )
 
     @staticmethod
-    def load(file: str | Path, *, use_gpu: bool = False) -> NKLand:
+    def load(file: Union[str, Path], *, use_gpu: bool = False) -> NKLand:
         """Load a NKLand instance from a file written with the save method.
 
         Parameters
@@ -269,7 +269,7 @@ class NKLand:
         k: int,
         *,
         num_instances: int = 1,
-        seed: _Rng | None = None,
+        seed: Union[_Rng, None] = None,
         use_gpu: bool = False,
     ) -> NKLand:
         """Create a random NK landscape.
@@ -282,7 +282,7 @@ class NKLand:
             Number of interactions per component, $K$.
         num_instances : int, optional
             Number of instances to generate for batch processing. Default is 1.
-        seed : _Rng | None, optional
+        seed : Union[_Rng, None], optional
             Seed or generator for random number generation.
         use_gpu : bool, optional
             Whether to use GPU acceleration. Default is False.
