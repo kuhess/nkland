@@ -50,6 +50,7 @@ lint.ignore = [
     "TRY003",  # long message forbidden in exceptions
     "TCH003",  # typing only standard library import
     "PLR2004", # Magic value used in comparison, ...
+    "UP007",   # prefer | over typing.Union
 ]
 
 [tool.ruff.lint.per-file-ignores]
