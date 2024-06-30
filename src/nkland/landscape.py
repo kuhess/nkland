@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Union
 
@@ -54,59 +55,62 @@ class NKLand:
             The adjacency matrix $A_{N \times N}$ containing binary values (0 or 1).
 
             It can be a batch of adjacencies matrix with shape
-            $(\text{num_instances}, N, N)$.
+            $(\text{additional dims}, N, N)$.
         fitness_contributions : torch.Tensor
             The matrix $C_{N \times 2^{K+1}}$ containing the contributions to the
             fitness.
 
             It can be a batch of adjacencies matrix with shape
-            $(\text{num_instances}, N, 2^{k+1})$.
+            $(\text{additional dims}, N, 2^{k+1})$.
         seed : Union[_Rng, None], optional
             Seed or generator for random number generation. Default is None.
         use_gpu : bool, optional
             Whether to use GPU acceleration. Default is False.
 
         """
-        if interactions.dim() not in [2, 3]:
+        if interactions.dim() < 2:
             msg = (
-                "interactions tensor must have 2 or 3 dimensions, "
+                "interactions tensor must have at least 2 dimensions, "
                 f"but got: {interactions.dim()}"
             )
             raise ValueError(msg)
-        if fitness_contributions.dim() not in [2, 3]:
+        if fitness_contributions.dim() < 2:
             msg = (
-                "fitness contributions tensor must have 2 or 3 dimensions, "
+                "fitness contributions tensor must have at least 2 dimensions, "
                 f"but got: {fitness_contributions.dim()}"
             )
             raise ValueError(msg)
-        if (
-            interactions.dim() == 3
-            and fitness_contributions.dim() == 3
-            and interactions.size(0) != fitness_contributions.size(0)
-        ):
+        if interactions.dim() != fitness_contributions.dim():
             msg = (
-                "with batches, first dimension (number of instances) of `interactions` "
-                "and `fitness_contributions` must have same cardinality, but got: "
+                "`interactions` and `fitness_contributions` must have same number of "
+                "dimensions, but got: "
                 f"{interactions.size(0)} != {fitness_contributions.size(0)}"
+            )
+            raise ValueError(msg)
+        if interactions.size()[:-2] != fitness_contributions.size()[:-2]:
+            msg = (
+                "additional dimensions (>2) of `interactions` and "
+                "`fitness_contributions` must have same sizes, but got: "
+                f"{interactions.size()[:-2]} != {fitness_contributions.size()[:-2]}"
             )
             raise ValueError(msg)
         if interactions.size(-1) != interactions.size(-2):
             msg = (
-                "`interactions` has bad shape, last 2 dimensions must be equal, "
+                "`interactions` has bad shape, last 2 dimensions (n) must be equal, "
                 f"but got: {interactions.shape}"
             )
             raise ValueError(msg)
         if interactions.size(-2) != fitness_contributions.size(-2):
             msg = (
-                "penultimate dimension of `interactions` and `fitness_contribution` do "
-                "not match: "
+                "penultimate dimension (n) of `interactions` and `fitness_contribution`"
+                " do not match: "
                 f"{interactions.size(-2)} != {fitness_contributions.size(-2)}"
             )
             raise ValueError(msg)
         if not _is_power_of_2(fitness_contributions.size(-1)):
             msg = (
-                "`fitness_contributions` last dimension must be a power of 2, "
-                f"but got: {fitness_contributions.size(1)}"
+                "`fitness_contributions` last dimension (2**(k+1)) must be a power of 2"
+                f", but got: {fitness_contributions.size(1)}"
             )
             raise ValueError(msg)
 
@@ -116,34 +120,20 @@ class NKLand:
 
         self._rng = default_rng(seed)
 
-        if interactions.dim() == 2:
-            interactions = interactions.unsqueeze(0)
         self.interactions = interactions.to(dtype=torch.uint8, device=self.device)
-
-        if fitness_contributions.dim() == 2:
-            fitness_contributions = fitness_contributions.unsqueeze(0)
         self.fitness_contributions = fitness_contributions.to(
             dtype=torch.float64, device=self.device
         )
 
+        self._additional_dims = tuple(self.interactions.size()[:-2])
         self._n = self.interactions.size(-1)
-        self._k = int(torch.sum(self.interactions[0, 0]).sum().item()) - 1
-        self._num_instances = self.interactions.size(0)
+        self._k = (
+            int(self.interactions[(*[0] * len(self._additional_dims), 0)].sum()) - 1
+        )
 
         self._powers_of_2 = 2 ** torch.arange(
             self._k, -1, -1, dtype=torch.float32, device=self.device
         )
-
-    def is_batch(self) -> bool:
-        """Check if the NK landscape is a batch.
-
-        Returns
-        -------
-        bool
-            True if there are multiple instances in the batch, False otherwise.
-
-        """
-        return self._num_instances > 0
 
     def evaluate(self, solutions: torch.Tensor) -> Union[torch.Tensor, float]:
         r"""Evaluate the fitness of one or more solutions.
@@ -165,34 +155,56 @@ class NKLand:
             Note that the returned Tensor is squeezed.
 
         """
-        if solutions.dim() == 1:
-            solutions = solutions.unsqueeze(0)
-        if solutions.dim() == 2:
+        if solutions.ndimension() == 1:
             solutions = solutions.unsqueeze(0)
 
-        m = solutions.size(1)
+        if solutions.size(-1) != self._n:
+            msg = (
+                "`solutions` tensor last dimension must have n={self._n} elements, "
+                f"but got {solutions.size(-1)}"
+            )
+            raise ValueError(msg)
+        if solutions.size()[:-2] != self._additional_dims:
+            msg = (
+                "`solutions` tensor must have the same additional dimensions as "
+                "`interactions`: "
+                f"got {tuple(solutions.size()[:-2])} "
+                f"but expected {self._additional_dims}"
+            )
+            raise ValueError(msg)
+
+        m = solutions.size(-2)
 
         solutions = solutions.to(dtype=torch.float32, device=self.device)
-        solutions_expanded = solutions.unsqueeze(3).expand(-1, -1, -1, self._n)
+        solutions_expanded = solutions.unsqueeze(-1).expand(*solutions.shape, self._n)
 
         indices = self.interactions.nonzero(as_tuple=True)[-1].reshape(
-            -1, self._n, self._k + 1
+            *self._additional_dims,
+            self._n,
+            self._k + 1,
         )
-        indices_expanded = indices.unsqueeze(1).expand(-1, m, -1, -1)
-        contrib_ind = torch.matmul(
-            torch.gather(solutions_expanded, 2, indices_expanded),
-            self._powers_of_2,
+        indices_expanded = indices.unsqueeze(-3).expand(
+            *self._additional_dims, m, -1, -1
         )
 
-        contrib_expanded = self.fitness_contributions.unsqueeze(1).expand(-1, m, -1, -1)
-        contrib_ind_expanded = contrib_ind.unsqueeze(3).expand(-1, -1, -1, 1)
+        contrib_ind = torch.matmul(
+            torch.gather(solutions_expanded, -2, indices_expanded),
+            self._powers_of_2,
+        )
+        contrib_ind_expanded = contrib_ind.unsqueeze(-1).expand(*contrib_ind.shape, 1)
+
+        contrib = self.fitness_contributions
+        contrib_expanded = contrib.unsqueeze(-3).expand(
+            *self._additional_dims, m, -1, -1
+        )
 
         fitness = torch.mean(
             torch.gather(contrib_expanded, -1, contrib_ind_expanded.long()),
             dim=-2,
         )
 
-        return fitness.squeeze()
+        # squeeze last 2 dims
+        return fitness.squeeze(-2).squeeze(-1)
 
     def sample(self, m: int = 1) -> torch.Tensor:
         r"""Get $m$ random solutions of $N$ dimensions.
@@ -206,15 +218,14 @@ class NKLand:
             shape $(\text{num_instances}, N, N)$.
 
         """
-        samples = torch.randint(
+        return torch.randint(
             0,
             2,
-            (self._num_instances, m, self._n),
+            (*self._additional_dims, m, self._n),
             generator=self._rng,
             dtype=torch.uint8,
             device=self.device,
         )
-        return samples.squeeze(0)
 
     def save(self, file: Union[str, Path]) -> None:
         """Save the NKLand instance to a file in a format compatible with PyTorch.
@@ -268,7 +279,7 @@ class NKLand:
         n: int,
         k: int,
         *,
-        num_instances: int = 1,
+        additional_dims: tuple[int, ...] = (),
         seed: Union[_Rng, None] = None,
         use_gpu: bool = False,
     ) -> NKLand:
@@ -280,8 +291,9 @@ class NKLand:
             Number of components, $N$.
         k : int
             Number of interactions per component, $K$.
-        num_instances : int, optional
-            Number of instances to generate for batch processing. Default is 1.
+        additional_dims : tuple[int, ...], optional
+            Tuple describing the sizes of additional shapes to use batch processing.
+            Default is ().
         seed : Union[_Rng, None], optional
             Seed or generator for random number generation.
         use_gpu : bool, optional
@@ -314,9 +326,9 @@ class NKLand:
         )
         rng = default_rng(seed)
 
-        interactions = NKLand._generate_interactions(n, k, num_instances, rng, device)
+        interactions = NKLand._generate_interactions(n, k, additional_dims, rng, device)
         fitness_contributions = NKLand._generate_fitness_contributions(
-            n, k, num_instances, rng, device
+            n, k, additional_dims, rng, device
         )
 
         return NKLand(
@@ -328,11 +340,23 @@ class NKLand:
 
     @staticmethod
     def _generate_interactions(
-        n: int, k: int, num_instances: int, rng: torch.Generator, device: torch.device
+        n: int,
+        k: int,
+        additional_dims: tuple[int, ...],
+        rng: torch.Generator,
+        device: torch.device,
     ) -> torch.Tensor:
-        interactions = torch.empty((num_instances, n, n))
-        for b in range(num_instances):
-            interactions[b] = torch.eye(n, dtype=torch.int32, device=device)
+        shape: tuple[int, ...] = (n, n)
+        if len(additional_dims) > 0:
+            shape = additional_dims + shape
+
+        interactions = torch.empty(shape, dtype=torch.uint8, device=device)
+
+        num_interactions = math.prod(additional_dims) if len(additional_dims) else 1
+
+        for idx in range(num_interactions):
+            index = torch.unravel_index(torch.tensor(idx), additional_dims)
+            interactions[index] = torch.eye(n, dtype=torch.uint8, device=device)
 
             for i in range(n):
                 possible_neighbors = torch.cat(
@@ -344,19 +368,25 @@ class NKLand:
                 selected_neighbors = possible_neighbors[
                     torch.randperm(n - 1, generator=rng)[:k]
                 ]
-                interactions[b, i, selected_neighbors] = 1
+                interactions[index][i, selected_neighbors] = 1
 
-        return interactions.squeeze(0)
+        return interactions
 
     @staticmethod
     def _generate_fitness_contributions(
-        n: int, k: int, num_instances: int, rng: torch.Generator, device: torch.device
+        n: int,
+        k: int,
+        additional_dims: tuple[int, ...],
+        rng: torch.Generator,
+        device: torch.device,
     ) -> torch.Tensor:
         num_interactions = 2 ** (k + 1)
-        fitness_contributions = torch.rand(
-            (num_instances, n, num_interactions),
+        shape: tuple[int, ...] = (n, num_interactions)
+        if len(additional_dims) > 0:
+            shape = additional_dims + shape
+        return torch.rand(
+            shape,
             generator=rng,
             dtype=torch.float64,
-        ).to(device)
-
-        return fitness_contributions.squeeze(0)
+            device=device,
+        )

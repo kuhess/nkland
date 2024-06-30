@@ -28,17 +28,24 @@ def test_roundtrip_with_m_samples():
     )
 
 
-def test_roundtrip_with_m_samples_b_batches():
-    landscape = NKLand.random(5, 1, num_instances=3, seed=0)
+def test_roundtrip_with_additional_dims():
+    landscape = NKLand.random(
+        5,
+        1,
+        additional_dims=(1, 3),
+        seed=0,
+    )
     solutions = landscape.sample(2)
     fitness = landscape.evaluate(solutions)
     torch.testing.assert_close(
         fitness,
         torch.tensor(
             [
-                [0.6462518, 0.6450555],
-                [0.5083262, 0.7238364],
-                [0.7537670, 0.4888107],
+                [
+                    [0.6462518, 0.6450555],
+                    [0.5083262, 0.7238364],
+                    [0.7537670, 0.4888107],
+                ]
             ],
             dtype=torch.float64,
         ),
@@ -55,7 +62,7 @@ def test_save_then_load(tmp_path: Path):
 
     assert loaded_landscape._n == landscape._n
     assert loaded_landscape._k == landscape._k
-    assert loaded_landscape._num_instances == landscape._num_instances
+    assert loaded_landscape._additional_dims == landscape._additional_dims
     torch.testing.assert_close(
         loaded_landscape.fitness_contributions,
         landscape.fitness_contributions,
@@ -101,30 +108,32 @@ def test_create_landscape_from_interactions():
 
     assert landscape._n == 4
     assert landscape._k == 1
-    assert landscape._num_instances == 1
+    assert landscape._additional_dims == (1,)
 
-    actual = landscape.evaluate(torch.tensor([[0, 1, 0, 0], [1, 0, 1, 1]]))
+    actual = landscape.evaluate(torch.tensor([[[0, 1, 0, 0], [1, 0, 1, 1]]]))
 
     torch.testing.assert_close(
         actual,
         torch.tensor(
             [
-                statistics.mean(
-                    [
-                        0.6,  # row0, col1 (0, 1)
-                        0.1,  # row1, col2 (1, 0)
-                        0.9,  # row2, col2 (1, 0)
-                        0.3,  # row3, col0 (0, 0)
-                    ]
-                ),
-                statistics.mean(
-                    [
-                        0.2,  # row0, col2 (1, 0)
-                        0.8,  # row1, col0 (0, 0)
-                        0.7,  # row2, col1 (0, 1)
-                        0.6,  # row3, col3 (1, 1)
-                    ]
-                ),
+                [
+                    statistics.mean(
+                        [
+                            0.6,  # row0, col1 (0, 1)
+                            0.1,  # row1, col2 (1, 0)
+                            0.9,  # row2, col2 (1, 0)
+                            0.3,  # row3, col0 (0, 0)
+                        ]
+                    ),
+                    statistics.mean(
+                        [
+                            0.2,  # row0, col2 (1, 0)
+                            0.8,  # row1, col0 (0, 0)
+                            0.7,  # row2, col1 (0, 1)
+                            0.6,  # row3, col3 (1, 1)
+                        ]
+                    ),
+                ]
             ],
             dtype=torch.float64,
         ),
