@@ -38,6 +38,14 @@ def default_rng(seed: Union[_Rng, None] = None) -> torch.Generator:
     return rng
 
 
+def default_device(device: Union[torch.device, str, None] = None) -> torch.device:
+    if isinstance(device, torch.device):
+        return device
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    return torch.device(device)
+
+
 class NKLand:
     def __init__(
         self,
@@ -206,7 +214,7 @@ class NKLand:
         # squeeze last 2 dims
         return fitness.squeeze(-2).squeeze(-1)
 
-    def sample(self, m: int = 1) -> torch.Tensor:
+    def sample(self, m: int = 1, seed: Union[_Rng, None] = None) -> torch.Tensor:
         r"""Get $m$ random solutions of $N$ dimensions.
 
         Returns
@@ -218,11 +226,13 @@ class NKLand:
             shape $(\text{num_instances}, N, N)$.
 
         """
+        rng = self._rng if seed is None else default_rng(seed)
+
         return torch.randint(
             0,
             2,
             (*self._additional_dims, m, self._n),
-            generator=self._rng,
+            generator=rng,
             dtype=torch.uint8,
             device=self.device,
         )
@@ -339,13 +349,17 @@ class NKLand:
         )
 
     @staticmethod
-    def _generate_interactions(
+    def generate_interactions(
         n: int,
         k: int,
-        additional_dims: tuple[int, ...],
-        rng: torch.Generator,
-        device: torch.device,
+        *,
+        additional_dims: tuple[int, ...] = (),
+        seed: Union[_Rng, None] = None,
+        device: Union[torch.device, str, None] = None,
     ) -> torch.Tensor:
+        rng = default_rng(seed)
+        device = default_device(device)
+
         shape: tuple[int, ...] = (n, n)
         if len(additional_dims) > 0:
             shape = additional_dims + shape
@@ -373,13 +387,17 @@ class NKLand:
         return interactions
 
     @staticmethod
-    def _generate_fitness_contributions(
+    def generate_fitness_contributions(
         n: int,
         k: int,
-        additional_dims: tuple[int, ...],
-        rng: torch.Generator,
-        device: torch.device,
+        *,
+        additional_dims: tuple[int, ...] = (),
+        seed: Union[_Rng, None] = None,
+        device: Union[torch.device, str, None] = None,
     ) -> torch.Tensor:
+        rng = default_rng(seed)
+        device = default_device(device)
+
         num_interactions = 2 ** (k + 1)
         shape: tuple[int, ...] = (n, num_interactions)
         if len(additional_dims) > 0:
