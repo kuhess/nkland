@@ -7,7 +7,7 @@ from typing import Union
 import torch
 
 MAX_N = 1024
-MAX_K = 32
+MAX_K = 16
 
 _Rng = Union[int, torch.Generator]
 
@@ -234,8 +234,7 @@ class NKLand:
             (*self._additional_dims, m, self._n),
             generator=rng,
             dtype=torch.uint8,
-            device=self.device,
-        )
+        ).to(device=self.device)
 
     def save(self, file: Union[str, Path]) -> None:
         """Save the NKLand instance to a file in a format compatible with PyTorch.
@@ -336,9 +335,19 @@ class NKLand:
         )
         rng = default_rng(seed)
 
-        interactions = NKLand._generate_interactions(n, k, additional_dims, rng, device)
-        fitness_contributions = NKLand._generate_fitness_contributions(
-            n, k, additional_dims, rng, device
+        interactions = NKLand.generate_interactions(
+            n,
+            k,
+            additional_dims=additional_dims,
+            seed=rng,
+            device=device
+        )
+        fitness_contributions = NKLand.generate_fitness_contributions(
+            n,
+            k,
+            additional_dims=additional_dims,
+            seed=rng,
+            device=device
         )
 
         return NKLand(
@@ -405,6 +414,5 @@ class NKLand:
         return torch.rand(
             shape,
             generator=rng,
-            dtype=torch.float64,
-            device=device,
-        )
+            dtype=torch.float64
+        ).to(device=device)
