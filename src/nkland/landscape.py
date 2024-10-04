@@ -313,9 +313,11 @@ class NKLand:
         )
         rng = default_rng(seed)
 
-        interactions = NKLand.generate_interactions(n, k, additional_dims, rng, device)
+        interactions = NKLand.generate_interactions(
+            n, k, additional_dims=additional_dims, seed=rng, device=device
+        )
         fitness_contributions = NKLand.generate_fitness_contributions(
-            n, k, additional_dims, rng, device
+            n, k, additional_dims=additional_dims, seed=rng, device=device
         )
 
         return NKLand(
