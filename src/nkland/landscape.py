@@ -300,7 +300,7 @@ class NKLand:
             Whether to use GPU acceleration. Default is False.
 
         Returns
-        ------
+        -------
         NKLand
             A random NK landscape.
 
