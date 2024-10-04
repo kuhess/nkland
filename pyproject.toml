@@ -8,6 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.9"
 torch = "~2.2"
+numpy = "<2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
@@ -16,6 +17,7 @@ mypy = "^1.10.0"
 pre-commit = "^3.7.1"
 mkdocstrings = {extras = ["python"], version = "^0.26.1"}
 mkdocs-material = "^9.5.39"
+black = "^24.8.0"
 
 [build-system]
 requires = ["poetry-core"]

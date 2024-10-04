@@ -1,0 +1,3 @@
+# `Trajectory` class
+
+::: nkland.Trajectory
