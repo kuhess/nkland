@@ -1,0 +1,3 @@
+# `NKLand` class
+
+::: nkland.NKLand

@@ -299,7 +299,7 @@ class NKLand:
         use_gpu : bool, optional
             Whether to use GPU acceleration. Default is False.
 
-        Result
+        Returns
         ------
         NKLand
             A random NK landscape.
