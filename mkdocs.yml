@@ -8,6 +8,8 @@ nav:
   - NK Model: nkmodel.md
   - API:
     - api/nkland.md
+    - api/trajectory.md
+    - api/utils.md
 
 markdown_extensions:
   - admonition
@@ -32,18 +34,15 @@ plugins:
       default_handler: python
       handlers:
         python:
-          paths: [src]
           import:
           - https://docs.python.org/3/objects.inv
           - https://numpy.org/doc/stable/objects.inv
+          - https://pytorch.org/docs/stable/objects.inv
           options:
             docstring_style: numpy
             show_source: false
-            # merge_init_into_class: true
-            # docstring_section_style: spacy
-            # members_order: source
-            # show_symbol_type_heading: true
-            # show_symbol_type_toc: true
+            show_symbol_type_toc: true
             separate_signature: true
+            members_order: source
             show_signature_annotations: true
             signature_crossrefs: true

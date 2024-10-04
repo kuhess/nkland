@@ -16,6 +16,7 @@ mypy = "^1.10.0"
 pre-commit = "^3.7.1"
 mkdocstrings = {extras = ["python"], version = "^0.26.1"}
 mkdocs-material = "^9.5.39"
+black = "^24.8.0"
 
 [build-system]
 requires = ["poetry-core"]

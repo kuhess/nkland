@@ -6,36 +6,14 @@ from typing import Union
 
 import torch
 
+from nkland.utils import Rng, default_device, default_rng
+
 MAX_N = 1024
 MAX_K = 32
-
-_Rng = Union[int, torch.Generator]
 
 
 def _is_power_of_2(n: int) -> bool:
     return (n & (n - 1) == 0) and n != 0
-
-
-def default_rng(seed: Union[_Rng, None] = None) -> torch.Generator:
-    """Create a default random number generator.
-
-    Parameters
-    ----------
-    seed : Union[_Rng, None], optional
-        Seed or generator for random number generation, by default None.
-
-    Returns
-    -------
-    torch.Generator
-        A random number generator.
-
-    """
-    if isinstance(seed, torch.Generator):
-        return seed
-    rng = torch.Generator()
-    if seed is not None:
-        rng.manual_seed(seed)
-    return rng
 
 
 class NKLand:
@@ -44,7 +22,7 @@ class NKLand:
         interactions: torch.Tensor,
         fitness_contributions: torch.Tensor,
         *,
-        seed: Union[_Rng, None] = None,
+        seed: Union[Rng, None] = None,
         use_gpu: bool = False,
     ) -> None:
         r"""Create the NK landscape model.
@@ -54,15 +32,15 @@ class NKLand:
         interactions : torch.Tensor
             The adjacency matrix $A_{N \times N}$ containing binary values (0 or 1).
 
-            It can be a batch of adjacencies matrix with shape
+            It can be a batch of adjacency matrices with shape
             $(\text{additional dims}, N, N)$.
         fitness_contributions : torch.Tensor
             The matrix $C_{N \times 2^{K+1}}$ containing the contributions to the
             fitness.
 
-            It can be a batch of adjacencies matrix with shape
+            It can be a batch of adjacency matrices with shape
             $(\text{additional dims}, N, 2^{k+1})$.
-        seed : Union[_Rng, None], optional
+        seed : Union[Rng, None], optional
             Seed or generator for random number generation. Default is None.
         use_gpu : bool, optional
             Whether to use GPU acceleration. Default is False.
@@ -144,7 +122,7 @@ class NKLand:
             Matrix of solutions $S_{m \times N}$ with $m$ as the number of solutions.
             Each row $s_i$ contains $N$ binary values (0 or 1).
 
-            It can be a batch of solution matrices with shape
+            It can be a batch of solutions with a tensor of shape
             $(\text{num_instances}, m, N)$.
 
         Returns
@@ -206,8 +184,16 @@ class NKLand:
         # squeeze last 2 dims
         return fitness.squeeze(-2).squeeze(-1)
 
-    def sample(self, m: int = 1) -> torch.Tensor:
+    def sample(self, m: int = 1, seed: Union[Rng, None] = None) -> torch.Tensor:
         r"""Get $m$ random solutions of $N$ dimensions.
+
+        Parameters
+        ----------
+        m : int
+            Number of solutions to get, $m$.
+
+        seed : Union[Rng, None], optional
+            Seed or generator for random number generation.
 
         Returns
         -------
@@ -218,14 +204,15 @@ class NKLand:
             shape $(\text{num_instances}, N, N)$.
 
         """
+        rng = self._rng if seed is None else default_rng(seed)
+
         return torch.randint(
             0,
             2,
             (*self._additional_dims, m, self._n),
-            generator=self._rng,
+            generator=rng,
             dtype=torch.uint8,
-            device=self.device,
-        )
+        ).to(device=self.device)
 
     def save(self, file: Union[str, Path]) -> None:
         """Save the NKLand instance to a file in a format compatible with PyTorch.
@@ -280,7 +267,7 @@ class NKLand:
         k: int,
         *,
         additional_dims: tuple[int, ...] = (),
-        seed: Union[_Rng, None] = None,
+        seed: Union[Rng, None] = None,
         use_gpu: bool = False,
     ) -> NKLand:
         """Create a random NK landscape.
@@ -294,7 +281,7 @@ class NKLand:
         additional_dims : tuple[int, ...], optional
             Tuple describing the sizes of additional shapes to use batch processing.
             Default is ().
-        seed : Union[_Rng, None], optional
+        seed : Union[Rng, None], optional
             Seed or generator for random number generation.
         use_gpu : bool, optional
             Whether to use GPU acceleration. Default is False.
@@ -326,8 +313,8 @@ class NKLand:
         )
         rng = default_rng(seed)
 
-        interactions = NKLand._generate_interactions(n, k, additional_dims, rng, device)
-        fitness_contributions = NKLand._generate_fitness_contributions(
+        interactions = NKLand.generate_interactions(n, k, additional_dims, rng, device)
+        fitness_contributions = NKLand.generate_fitness_contributions(
             n, k, additional_dims, rng, device
         )
 
@@ -339,13 +326,42 @@ class NKLand:
         )
 
     @staticmethod
-    def _generate_interactions(
+    def generate_interactions(
         n: int,
         k: int,
-        additional_dims: tuple[int, ...],
-        rng: torch.Generator,
-        device: torch.device,
+        *,
+        additional_dims: tuple[int, ...] = (),
+        seed: Union[Rng, None] = None,
+        device: Union[torch.device, str, None] = None,
     ) -> torch.Tensor:
+        r"""Create an interaction matrix $M_{N \times N}$.
+
+        It can also create a tensor
+        $M_{(d_1 \times \dots \times d_b) \times N \times N}$
+        with $b$ additional dimensions.
+
+        Parameters
+        ----------
+        n :
+            Number of components, $N$.
+        k :
+            Number of interactions per component, $K$.
+        additional_dims :
+            The shape of the additional dimensions to create a batch.
+        seed :
+            The seed used to populate the matrix.
+        device :
+            The torch.Device to use.
+
+        Returns
+        -------
+        torch.Tensor
+            The interaction matrix $A$ (or a batch).
+
+        """
+        rng = default_rng(seed)
+        device = default_device(device)
+
         shape: tuple[int, ...] = (n, n)
         if len(additional_dims) > 0:
             shape = additional_dims + shape
@@ -373,20 +389,44 @@ class NKLand:
         return interactions
 
     @staticmethod
-    def _generate_fitness_contributions(
+    def generate_fitness_contributions(
         n: int,
         k: int,
-        additional_dims: tuple[int, ...],
-        rng: torch.Generator,
-        device: torch.device,
+        *,
+        additional_dims: tuple[int, ...] = (),
+        seed: Union[Rng, None] = None,
+        device: Union[torch.device, str, None] = None,
     ) -> torch.Tensor:
+        r"""Create a fitness contributions matrix $C_{N \times (K+1)}$.
+
+        I can also create a tensor
+        $C_{(d_1 \times \dots \times d_b) \times N \times (K+1)}$
+        with $b$ additional dimensions.
+
+        Parameters
+        ----------
+        n :
+            Number of components, $N$.
+        k :
+            Number of interactions per component, $K$.
+        additional_dims :
+            The shape of the additional dimensions to create a batch.
+        seed :
+            The seed used to populate the matrix.
+        device :
+            The torch.Device to use.
+
+        Returns
+        -------
+        torch.Tensor
+            The matrix $C$ with the contributions to the fitness (or a batch).
+
+        """
+        rng = default_rng(seed)
+        device = default_device(device)
+
         num_interactions = 2 ** (k + 1)
         shape: tuple[int, ...] = (n, num_interactions)
         if len(additional_dims) > 0:
             shape = additional_dims + shape
-        return torch.rand(
-            shape,
-            generator=rng,
-            dtype=torch.float64,
-            device=device,
-        )
+        return torch.rand(shape, generator=rng, dtype=torch.float64).to(device=device)
