@@ -130,7 +130,7 @@ class NKLand:
         Union[torch.Tensor, float]
             The fitness values corresponding to the solutions.
 
-            Note that the returned Tensor is squeezed.
+            Note that the returned Tensor is squeezed to return a float for a scalar.
 
         """
         if solutions.ndimension() == 1:

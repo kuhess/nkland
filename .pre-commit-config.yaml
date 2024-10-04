@@ -25,3 +25,9 @@ repos:
         language: system
         pass_filenames: false
         files: pyproject.toml
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        args: [--strict, --ignore-missing-imports]
+        additional_dependencies: ["torch<2.3"]

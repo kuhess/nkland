@@ -9,8 +9,7 @@ import torch
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from landscape import NKLand
-
+    from nkland.landscape import NKLand
     from nkland.utils import Rng
 
 logger = logging.getLogger(__name__)
@@ -51,7 +50,7 @@ class Trajectory:
 
         """
         self.solutions.append(solution)
-        self.fitness.append(fitness)
+        self.fitness.append(torch.as_tensor(fitness))
         return self
 
     def get_solutions(self) -> torch.Tensor:
@@ -120,5 +119,5 @@ class Trajectory:
         return Trajectory(
             strategy_name=strategy_name,
             solutions=[solution0],
-            fitness=[fitness0],
+            fitness=[torch.as_tensor(fitness0)],
         )
