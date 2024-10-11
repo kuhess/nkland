@@ -72,7 +72,7 @@ class Trajectory:
 
     def get_best_fitness(self) -> torch.Tensor:
         """Get the greatest fitness among visited solutions."""
-        return torch.max(self.get_fitness())
+        return torch.max(self.get_fitness(), dim=0)[0]
 
     def get_dimensions(self) -> Optional[str]:
         """Get a string describing the dimensions."""
