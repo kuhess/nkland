@@ -6,9 +6,9 @@ authors = ["Quentin Suire <dev@quentinsuire.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.9"
-torch = "~2.2"
-numpy = "<2"
+python = "^3.10"
+torch = "2.5.0"
+numpy = "^2.1.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
