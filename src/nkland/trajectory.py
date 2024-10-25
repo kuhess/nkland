@@ -22,6 +22,8 @@ class Trajectory:
     strategy_name: str
     solutions: list[torch.Tensor]
     fitness: list[torch.Tensor]
+    other_solutions: list[torch.Tensor | None]
+    other_fitness: list[torch.Tensor | None]
 
     def last_solution(self) -> torch.Tensor:
         """Get the last solution of the Trajectory."""
@@ -37,7 +39,13 @@ class Trajectory:
             raise ValueError(msg)
         return self.fitness[-1]
 
-    def append_point(self, solution: torch.Tensor, fitness: torch.Tensor) -> Trajectory:
+    def append_point(
+        self,
+        solution: torch.Tensor,
+        fitness: torch.Tensor,
+        other_solutions: torch.Tensor | None,
+        other_fitness: torch.Tensor | None,
+    ) -> Trajectory:
         """Add a new solution.
 
         Parameters
@@ -48,9 +56,17 @@ class Trajectory:
         fitness : torch.Tensor
             the fitness value of the solution (it should be a scalar).
 
+        other_solutions : torch.Tensor | None
+            the other available solutions
+
+        other_fitness : torch.Tensor | None
+            the fitness values of the other solutions.
+
         """
         self.solutions.append(solution)
         self.fitness.append(torch.as_tensor(fitness))
+        self.other_solutions.append(other_solutions)
+        self.other_fitness.append(other_fitness)
         return self
 
     def get_solutions(self) -> torch.Tensor:
@@ -87,6 +103,8 @@ class Trajectory:
                 "strategy_name": self.strategy_name,
                 "solutions": self.solutions,
                 "fitness": self.fitness,
+                "other_solutions": self.other_solutions,
+                "other_fitness": self.other_fitness,
             },
             f=filepath,
         )
@@ -104,6 +122,8 @@ class Trajectory:
             strategy_name=obj["strategy_name"],
             solutions=obj["solutions"],
             fitness=obj["fitness"],
+            other_solutions=obj["other_solutions"],
+            other_fitness=obj["other_fitness"],
         )
 
     @staticmethod
@@ -120,4 +140,6 @@ class Trajectory:
             strategy_name=strategy_name,
             solutions=[solution0],
             fitness=[torch.as_tensor(fitness0)],
+            other_solutions=[None],
+            other_fitness=[None],
         )
